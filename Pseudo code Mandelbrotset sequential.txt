@@ -1,0 +1,33 @@
+Define structure complex:
+    real: double
+    imag: double
+
+Define function cal_pixel(c: complex) -> int:
+    z_real = 0
+    z_imag = 0
+    z_real2 = 0
+    z_imag2 = 0
+    lengthsq = 0
+    iter = 0
+
+    Repeat:
+        z_real2 = z_real * z_real
+        z_imag2 = z_imag * z_imag
+
+        z_imag = 2 * z_real * z_imag + c.imag
+        z_real = z_real2 - z_imag2 + c.real
+        lengthsq = z_real2 + z_imag2
+        iter = iter + 1
+    Until iter < MAX_ITER or lengthsq < 4.0
+
+    Return iter
+
+Define function main():
+    Declare 2D array image of size HEIGHT x WIDTH
+    Declare variable c of type complex
+
+    For each row i from 0 to HEIGHT:
+        For each column j from 0 to WIDTH:
+            c.real = (j - WIDTH / 2.0) * 4.0 / WIDTH
+            c.imag = (i - HEIGHT / 2.0) * 4.0 / HEIGHT
+            image[i][j] = cal_pixel(c)

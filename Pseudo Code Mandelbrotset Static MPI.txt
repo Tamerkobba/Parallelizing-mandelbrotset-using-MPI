@@ -1,0 +1,14 @@
+Master Process (Pmaster):
+For each process (Pi):
+    Send row number (row) to slave process Pi
+
+For each pixel in the Mandelbrot set image (in any order):
+    Receive coordinates (c) and color (color) from any slave process (Pany)
+    Display pixel on the screen
+
+Slave Process (Pslave):
+Receive row number (row) from the master process (Pmaster)
+
+For each pixel in the assigned row (for x from 0 to dip_width):
+    Calculate the complex coordinates (c.real, c.imag) based on the pixel's x-coordinate
+    Send coordinates (c) and color (color) to the master process (Pmaster)
