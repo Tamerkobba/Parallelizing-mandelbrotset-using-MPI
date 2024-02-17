@@ -1,6 +1,8 @@
+
 #include <stdio.h>
 #include <mpi.h>
 #include <time.h>
+#include <stdlib.h>
 
 #define WIDTH  640
 #define HEIGHT  480
@@ -29,19 +31,19 @@ int cal_pixel(struct complex c) {
     return iter;
 }
 
-void save_pgm(const char *filename, int image[HEIGHT][WIDTH]) {
+void save_pgm(const char *filename, int *image, int width, int height) {
     FILE* pgmimg;
     int temp;
     pgmimg = fopen(filename, "wb");
     fprintf(pgmimg, "P2\n"); // Writing Magic Number to the File
-    fprintf(pgmimg, "%d %d\n", WIDTH, HEIGHT);  // Writing Width and Height
+    fprintf(pgmimg, "%d %d\n", width, height);  // Writing Width and Height
     fprintf(pgmimg, "255\n");  // Writing the maximum gray value
     int count = 0;
 
-    for (int i = 0; i < HEIGHT; i++) {
-        for (int j = 0; j < WIDTH; j++) {
-            temp = image[i][j];
-            fprintf(pgmimg, "%d ", temp); // Writing the gray values in the 2D array to the file
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            temp = image[i * width + j];
+            fprintf(pgmimg, "%d ", temp); 
         }
         fprintf(pgmimg, "\n");
     }
@@ -56,60 +58,58 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     // Calculate rows per process
-    int rows_per_process = HEIGHT / (size - 1); // Adjusted to exclude master
+    int rows_per_process = HEIGHT / size;
 
-    // Create a 2D array to store the image
-    int image[HEIGHT][WIDTH];
+    // Calculate starting and ending rows for the current process
+    int start_row = rank * rows_per_process;
+    int end_row = start_row + rows_per_process;
 
-    double start_time, end_time;
+    // Allocate memory for the local portion of the image
+    int local_height = rows_per_process;
+    int local_width = WIDTH;
+    int *local_image = (int *)malloc(local_height * local_width * sizeof(int));
+    if (local_image == NULL) {
+        fprintf(stderr, "Memory allocation failed.\n");
+        MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+    }
 
-    start_time = MPI_Wtime(); // Start measuring time
+    // Start measuring time
+    double start_time = MPI_Wtime();
 
-    if (rank == 0) {
-        // Master Process
-        for (int i = 1; i < size; i++) {
-            int row_start = (i - 1) * rows_per_process;
-            int row_end = row_start + rows_per_process;
-            MPI_Send(&row_start, 1, MPI_INT, i, 0, MPI_COMM_WORLD); // Send start row number to slave process
-            MPI_Send(&row_end, 1, MPI_INT, i, 0, MPI_COMM_WORLD); // Send end row number to slave process
-        }
-
-        // Receive coordinates and colors from slave processes and update image
-        for (int i = 1; i < size; i++) {
-            int row_start = (i - 1) * rows_per_process;
-            int row_end = row_start + rows_per_process;
-            for (int row = row_start; row < row_end; row++) {
-                for (int j = 0; j < WIDTH; j++) {
-                    struct complex c;
-                    MPI_Recv(&c, sizeof(struct complex), MPI_BYTE, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                    int color = cal_pixel(c);
-                    image[row][j] = color;
-                }
-            }
-        }
-
-        // Save the image
-        save_pgm("mandelbrot_mpi.pgm", image);
-
-        end_time = MPI_Wtime(); // End measuring time
-        printf("Total execution time: %f seconds\n", end_time - start_time);
-    } else {
-        // Slave Processes
-        int row_start, row_end;
-        MPI_Recv(&row_start, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Receive start row number from master
-        MPI_Recv(&row_end, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Receive end row number from master
-
-        // Compute rows assigned to this slave process and send coordinates and colors back
-        for (int row = row_start; row < row_end; row++) {
-            for (int j = 0; j < WIDTH; j++) {
-                struct complex c;
-                c.real = (j - WIDTH / 2.0) * 4.0 / WIDTH;
-                c.imag = (row - HEIGHT / 2.0) * 4.0 / HEIGHT;
-                MPI_Send(&c, sizeof(struct complex), MPI_BYTE, 0, 0, MPI_COMM_WORLD); // Send coordinates to master
-            }
+    // Calculate Mandelbrot set for the local portion
+    for (int i = 0; i < local_height; i++) {
+        for (int j = 0; j < local_width; j++) {
+            struct complex c;
+            c.real = (j - WIDTH / 2.0) * 4.0 / WIDTH;
+            c.imag = (i + start_row - HEIGHT / 2.0) * 4.0 / HEIGHT;
+            local_image[i * local_width + j] = cal_pixel(c);
         }
     }
 
+    // End measuring time
+    double end_time = MPI_Wtime();
+
+    // Gather results from all processes
+    int *image = NULL;
+    if (rank == 0) {
+        image = (int *)malloc(HEIGHT * WIDTH * sizeof(int));
+        if (image == NULL) {
+            fprintf(stderr, "Memory allocation failed.\n");
+            MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+        }
+    }
+
+    MPI_Gather(local_image, local_height * local_width, MPI_INT, image, local_height * local_width, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Save the image and print execution time
+    if (rank == 0) {
+        printf("Total execution time: %f seconds\n", end_time - start_time);
+        save_pgm("mandelbrot_mpi.pgm", image, WIDTH, HEIGHT);
+        free(image);
+    }
+
+    free(local_image);
     MPI_Finalize();
     return 0;
 }
+
