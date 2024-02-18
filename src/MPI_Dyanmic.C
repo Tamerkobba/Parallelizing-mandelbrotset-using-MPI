@@ -6,7 +6,7 @@
 #define WIDTH 640
 #define HEIGHT 480
 #define MAX_ITER 255
-#define NUM_TRIALS 10 // Number of times to run the computation
+#define NUM_TRIALS 10 
 
 #define MPI_PERFORM_TAG 1
 #define MPI_DONE_TAG 2
@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    double total_time = 0.0; // Accumulate total execution time
+    double total_time = 0.0; 
 
     for (int trial = 0; trial < NUM_TRIALS; trial++) {
         int image[HEIGHT][WIDTH] = {0};
@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
             end_time = clock();
             total_time += ((double) (end_time - start_time)) / CLOCKS_PER_SEC;
 
-            if (trial == NUM_TRIALS - 1) { // Save image only at the last trial
+            if (trial == NUM_TRIALS - 1) { 
                 save_pgm("mandelbrot_mpi_dynamic.pgm", image);
             }
         } else {
@@ -103,7 +103,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        MPI_Barrier(MPI_COMM_WORLD); // Ensure all processes are synchronized before next trial
+        MPI_Barrier(MPI_COMM_WORLD); 
     }
 
     if (rank == 0) {

@@ -6,7 +6,7 @@
 #define WIDTH 640
 #define HEIGHT 480
 #define MAX_ITER 255
-#define NUM_TRIALS 10 // Define the number of trials
+#define NUM_TRIALS 10 
 
 struct complex {
     double real;
@@ -42,8 +42,8 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    double total_cpu_time_used = 0; // Accumulate CPU time used for all trials
-    double total_comp_time = 0; // Accumulate computation time for all trials
+    double total_cpu_time_used = 0;
+    double total_comp_time = 0;
 
     for (int trial = 0; trial < NUM_TRIALS; trial++) {
         int rows_per_process = HEIGHT / size;
@@ -54,9 +54,9 @@ int main(int argc, char **argv) {
         int *local_image = (int *)malloc(rows_per_process * WIDTH * sizeof(int));
 
         clock_t start_time = clock(), comp_start, comp_end;
-        double comp_time_used = 0; // Computation time for this trial
+        double comp_time_used = 0;
 
-        comp_start = clock(); // Start timing computation
+        comp_start = clock(); 
         for (int i = 0; i < rows_per_process; i++) {
             for (int j = 0; j < WIDTH; j++) {
                 struct complex c;
@@ -65,9 +65,9 @@ int main(int argc, char **argv) {
                 local_image[i * WIDTH + j] = cal_pixel(c);
             }
         }
-        comp_end = clock(); // End timing computation
+        comp_end = clock();
         comp_time_used = ((double)(comp_end - comp_start)) / CLOCKS_PER_SEC;
-        total_comp_time += comp_time_used; // Accumulate computation time
+        total_comp_time += comp_time_used;
 
         if (rank == 0) {
             int *image = (int *)malloc(HEIGHT * WIDTH * sizeof(int));
@@ -95,9 +95,9 @@ int main(int argc, char **argv) {
             }
             clock_t end_time = clock();
             double cpu_time_used = ((double)(end_time - start_time)) / CLOCKS_PER_SEC;
-            total_cpu_time_used += cpu_time_used; // Accumulate total CPU time
+            total_cpu_time_used += cpu_time_used; 
 
-            if (trial == NUM_TRIALS - 1) { // Print average times on last trial
+            if (trial == NUM_TRIALS - 1) {
                 printf("Average CPU time used (including communication): %f seconds\n", total_cpu_time_used / NUM_TRIALS);
                 printf("Average computation time only: %f seconds\n", total_comp_time / NUM_TRIALS);
                 save_pgm("mandelbrot_mpi.pgm", image);
