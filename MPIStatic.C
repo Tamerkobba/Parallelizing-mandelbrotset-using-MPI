@@ -36,7 +36,6 @@ void save_pgm(const char *filename, int *image) {
     }
     fclose(pgmimg);
 }
-
 int main(int argc, char **argv) {
     int rank, size;
     MPI_Init(&argc, &argv);
@@ -44,8 +43,9 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     double total_cpu_time_used = 0; // Accumulate CPU time used for all trials
+    double total_comp_time = 0; // Accumulate computation time for all trials
 
-    for (int trial = 0; trial < NUM_TRIALS; trial++) { // Loop to run the computation multiple times
+    for (int trial = 0; trial < NUM_TRIALS; trial++) {
         int rows_per_process = HEIGHT / size;
         int remainder_rows = HEIGHT % size;
         if (rank < remainder_rows) {
@@ -53,8 +53,10 @@ int main(int argc, char **argv) {
         }
         int *local_image = (int *)malloc(rows_per_process * WIDTH * sizeof(int));
 
-        clock_t start_time = clock();
+        clock_t start_time = clock(), comp_start, comp_end;
+        double comp_time_used = 0; // Computation time for this trial
 
+        comp_start = clock(); // Start timing computation
         for (int i = 0; i < rows_per_process; i++) {
             for (int j = 0; j < WIDTH; j++) {
                 struct complex c;
@@ -63,6 +65,9 @@ int main(int argc, char **argv) {
                 local_image[i * WIDTH + j] = cal_pixel(c);
             }
         }
+        comp_end = clock(); // End timing computation
+        comp_time_used = ((double)(comp_end - comp_start)) / CLOCKS_PER_SEC;
+        total_comp_time += comp_time_used; // Accumulate computation time
 
         if (rank == 0) {
             int *image = (int *)malloc(HEIGHT * WIDTH * sizeof(int));
@@ -92,8 +97,9 @@ int main(int argc, char **argv) {
             double cpu_time_used = ((double)(end_time - start_time)) / CLOCKS_PER_SEC;
             total_cpu_time_used += cpu_time_used; // Accumulate total CPU time
 
-            if (trial == NUM_TRIALS - 1) { // Save image and print average time on last trial
-                printf("Average CPU time used: %f seconds\n", total_cpu_time_used / NUM_TRIALS);
+            if (trial == NUM_TRIALS - 1) { // Print average times on last trial
+                printf("Average CPU time used (including communication): %f seconds\n", total_cpu_time_used / NUM_TRIALS);
+                printf("Average computation time only: %f seconds\n", total_comp_time / NUM_TRIALS);
                 save_pgm("mandelbrot_mpi.pgm", image);
             }
             free(image);
@@ -106,4 +112,3 @@ int main(int argc, char **argv) {
     MPI_Finalize();
     return 0;
 }
-
