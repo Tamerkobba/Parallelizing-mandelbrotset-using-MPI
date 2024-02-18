@@ -1,11 +1,18 @@
 Master Process (Pmaster):
 Calculate rows_per_process = HEIGHT / num_proc.
-
+Calculate remainder_rows to distribute the remaining rows evenly
 For each process (Pi) except the master:
     Calculate the starting row (start_row) for Pi.
     Calculate the ending row (end_row) for Pi based on rows_per_process.
 
-Collect results from all slave processes using MPI_Gather.
+Initialize an empty image array to collect results.
+Collect results from all slave processes:
+    For each slave process:
+        Receive a message containing the portion of the Mandelbrot set computed by the slave.
+        Extract the starting row index from the received message to identify where this portion fits in the final image array.
+        Store the received portion in the appropriate place in the final image array.
+
+Save the collected image using save_pgm.
 
 Slave Process (Pslave):
 Based on the received rank, calculate the assigned rows to compute (start_row to end_row).
@@ -15,4 +22,4 @@ Based on the received rank, calculate the assigned rows to compute (start_row to
             Calculate the complex coordinates (c.real, c.imag) based on the pixel's x-coordinate and the row number.
             Compute the color for the pixel using cal_pixel(c) and store it in a local part of the image.
 
-Participate in the MPI_Gather to send the computed local image part to the master process.
+Send the computed local image part along with its starting row index back to the master process using MPI_Send.

@@ -1,0 +1,22 @@
+Master Process (P_master):
+
+Initialize an empty 2D array image[HEIGHT][WIDTH] to store the final result.
+Send the first batch of row numbers to each slave process, marking the start of their workload.
+
+While there are rows left to assign:
+    Receive a completed row from any slave process along with the row index.
+    Update the image array with the received row at the correct index.
+    Send a new row number to the slave process that just completed work, if any rows remain.
+
+After all rows are assigned and received, send a termination signal to all slave processes
+Save the final image using save_pgm.
+
+Slave Process (P_slave):
+Receive the initial row number from the master process.
+While not receiving a termination signal:
+  For each assigned row:
+    For each pixel in the row:
+      Calculate the complex coordinates (c.real, c.imag) based on the pixel's coordinates.
+      Compute the color for the pixel using cal_pixel(c) and store it in a local array.
+    Send the computed row along with its index back to the master process.
+    Wait for the next row number or a termination signal from the master process.

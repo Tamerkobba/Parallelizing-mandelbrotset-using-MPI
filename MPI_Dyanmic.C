@@ -1,10 +1,15 @@
-#include <stdio.h>
-#include <time.h>
 #include <mpi.h>
+#include <stdio.h>
 #include <stdlib.h>
-#define WIDTH  640
-#define HEIGHT  480
-#define MAX_ITER  255
+#include <time.h>
+
+#define WIDTH 640
+#define HEIGHT 480
+#define MAX_ITER 255
+
+#define MPI_PERFORM_TAG 1
+#define MPI_DONE_TAG 2
+#define MPI_TERMINATE_TAG 3
 
 struct complex {
     double real;
@@ -12,100 +17,82 @@ struct complex {
 };
 
 int cal_pixel(struct complex c) {
-    double z_real = 0;
-    double z_imag = 0;
-    double z_real2, z_imag2, lengthsq;
-    int iter = 0;
-    do {
-        z_real2 = z_real * z_real;
-        z_imag2 = z_imag * z_imag;
+    double z_real = c.real, z_imag = c.imag;
+    int n = 0;
+    for (n = 0; n < MAX_ITER; n++) {
+        double z_real2 = z_real * z_real, z_imag2 = z_imag * z_imag;
+        if (z_real2 + z_imag2 > 4.0) break;
         z_imag = 2 * z_real * z_imag + c.imag;
         z_real = z_real2 - z_imag2 + c.real;
-        lengthsq = z_real2 + z_imag2;
-        iter++;
-    } while ((iter < MAX_ITER) && (lengthsq < 4.0));
-    return iter;
+    }
+    return n;
 }
 
 void save_pgm(const char *filename, int image[HEIGHT][WIDTH]) {
-    FILE *pgmimg;
-    int temp;
-    pgmimg = fopen(filename, "wb");
-    fprintf(pgmimg, "P2\n"); // Writing Magic Number to the File
-    fprintf(pgmimg, "%d %d\n", WIDTH, HEIGHT); // Writing Width and Height
-    fprintf(pgmimg, "255\n");                   // Writing the maximum gray value
-    int count = 0;
-
+    FILE *file = fopen(filename, "w");
+    fprintf(file, "P2\n%d %d\n%d\n", WIDTH, HEIGHT, MAX_ITER);
     for (int i = 0; i < HEIGHT; i++) {
         for (int j = 0; j < WIDTH; j++) {
-            temp = image[i][j];
-            fprintf(pgmimg, "%d ", temp); // Writing the gray values in the 2D array to the file
+            fprintf(file, "%d ", image[i][j]);
         }
-        fprintf(pgmimg, "\n");
+        fprintf(file, "\n");
     }
-    fclose(pgmimg);
+    fclose(file);
 }
 
-int main(int argc, char *argv[]) {
-    int rank, size;
+int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
+
+    int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    if (size < 2) {
-        fprintf(stderr, "This program requires at least 2 MPI tasks.\n");
-        MPI_Finalize();
-        return 1;
-    }
+    int image[HEIGHT][WIDTH] = {0};
+    clock_t start_time, end_time;
+    double total_time;
 
     if (rank == 0) {
-        // Master process
-        int *image = malloc(WIDTH * HEIGHT * sizeof(int));
-        int current_row = 0;
+        start_time = clock();
+        int master_row = 0;
+        int worker_row[WIDTH + 1];
+       
+        for (int i = 1; i < size; i++) {
+            MPI_Send(&master_row, 1, MPI_INT, i, MPI_PERFORM_TAG, MPI_COMM_WORLD);
+            master_row++;
+        }
+
         MPI_Status status;
-        int worker;
-
-        for (worker = 1; worker < size; worker++) {
-            if (current_row < HEIGHT) {
-                MPI_Send(&current_row, 1, MPI_INT, worker, 0, MPI_COMM_WORLD);
-                current_row++;
-            } else {
-                break; // No more rows to distribute
+        while (master_row < HEIGHT) {
+            MPI_Recv(worker_row, WIDTH + 1, MPI_INT, MPI_ANY_SOURCE, MPI_DONE_TAG, MPI_COMM_WORLD, &status);
+            int row = worker_row[WIDTH]; 
+            for (int j = 0; j < WIDTH; j++) {
+                image[row][j] = worker_row[j];
             }
+            MPI_Send(&master_row, 1, MPI_INT, status.MPI_SOURCE, MPI_PERFORM_TAG, MPI_COMM_WORLD);
+            master_row++;
         }
 
-        while (current_row < HEIGHT) {
-            // Receive completed row from any worker
-            MPI_Recv(image + (current_row * WIDTH), WIDTH, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-            // Send a new row to the worker that just finished
-            MPI_Send(&current_row, 1, MPI_INT, status.MPI_SOURCE, 0, MPI_COMM_WORLD);
-            current_row++;
+        for (int i = 1; i < size; i++) {
+            MPI_Send(NULL, 0, MPI_INT, i, MPI_TERMINATE_TAG, MPI_COMM_WORLD);
         }
 
-        // Collect the remaining rows from workers
-        for (worker = 1; worker < size; worker++) {
-            MPI_Recv(image + (current_row * WIDTH), WIDTH, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-        }
-
-        // Send termination signal to workers
-        current_row = -1; // Use -1 as termination signal
-        for (worker = 1; worker < size; worker++) {
-            MPI_Send(&current_row, 1, MPI_INT, worker, 0, MPI_COMM_WORLD);
-        }
-
-        save_pgm("mandelbrot_mpi_dynamic.pgm", image, WIDTH, HEIGHT);
-        free(image);
+        end_time = clock();
+        total_time = ((double) (end_time - start_time)) / CLOCKS_PER_SEC;
+        printf("The execution time of the dynamic trial is: %f seconds\n", total_time);
+        save_pgm("mandelbrot_mpi_dynamic.pgm", image);
     } else {
-        // Worker process
-        int row;
+        int my_row[WIDTH + 1]; 
+        MPI_Status status;
         while (1) {
-            MPI_Recv(&row, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            if (row == -1) break; // Termination signal received
-
-            int *row_data = malloc(WIDTH * sizeof(int));
-            // Compute the Mandelbrot set for the assigned row here
-            MPI_Send(row_data, WIDTH, MPI_INT, 0, 0, MPI_COMM_WORLD);
-            free(row_data);
+            int row_number;
+            MPI_Recv(&row_number, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+            if (status.MPI_TAG == MPI_TERMINATE_TAG) break;
+            for (int j = 0; j < WIDTH; j++) {
+                struct complex c = {.real = (j - WIDTH / 2.0) * 4.0 / WIDTH, .imag = (row_number - HEIGHT / 2.0) * 4.0 / HEIGHT};
+                my_row[j] = cal_pixel(c);
+            }
+            my_row[WIDTH] = row_number;
+            MPI_Send(my_row, WIDTH + 1, MPI_INT, 0, MPI_DONE_TAG, MPI_COMM_WORLD);
         }
     }
 
